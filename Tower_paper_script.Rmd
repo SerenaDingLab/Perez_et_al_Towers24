@@ -1,0 +1,151 @@
+---
+title: "Tower_story_Report"
+output: html_document
+date: "2024-10-09"
+---
+
+```{r, echo=FALSE}
+# Packages
+# Plots
+library(ggplot2)
+library(viridis)
+library(ggbeeswarm)
+library(hrbrthemes)
+# Models and stats
+library(lme4) # LMM
+library(bbmle) # comparing models
+# Directory
+setwd("/Users/dperez/Desktop/Temp_worm_data/Report/Submitted_code")
+Control2 <- read.csv("Control2.csv", header = TRUE, na.strings=c("","NA"))
+Subset_brood <- read.csv("Subset_brood.csv", header = TRUE, na.strings=c("","NA"))
+Thrash_final_a <- read.csv("Thrash_final_a.csv", header = TRUE, na.strings=c("","NA"))
+```
+
+**Control**
+  
+```{r, echo=FALSE}
+## Control experiment
+# Model
+# Are food and no food significantly different?
+control_mod <- lm(Length ~ Treatment, data=Control2)
+summary(control_mod)
+
+#Boxplot
+ggplot(Control2, aes(x=Treatment, y=Length)) + 
+  geom_boxplot(fill="slateblue", alpha=0.2) + 
+  scale_fill_viridis(discrete = TRUE, alpha=0.4) +
+  geom_quasirandom(dodge.width = 0.9, varwidth = TRUE, alpha=0.4) +
+  labs(y= "Maximum tower length", x = "Treatment") +
+  theme_bw()
+```
+
+
+**3.A.1 Brood data**
+```{r, echo=FALSE}
+# Test for normality
+shapiro.test(Subset_brood$Sum_brood) # From the output, the p-value > 0.05 implying that the distribution of the data are not significantly different from normal distribution. We can assume the normality.
+ 
+# Models
+# Scale variables (z-transformation)
+Subset_brood_a <- transform(Subset_brood,
+    Response=scale(Sum_brood),
+    Length_cs=scale(Length))
+sapply(Subset_brood_a, class)
+# Test for normality
+shapiro.test(Subset_brood_a$Response)
+hist(Subset_brood_a$Response)
+# Relevel
+Subset_brood_a$Position <- relevel(Subset_brood_a$Position, ref = "1.top")
+# Check data
+levels(Subset_brood_a$Conc)
+Subset_brood_a$Plate <- as.factor(Subset_brood_a$Plate)
+levels(Subset_brood_a$Plate)
+# Models
+brood_model_0 <- lmer(Response ~ Position +
+                            Length_cs + # did not add effect of pillar because towers were picked when they worms reached top of pillar Pillar=tower height
+                            (1|Plate), data=Subset_brood_a, REML = F) 
+
+brood_model_1 <- lmer(Response ~ 
+                            Length_cs +
+                            (1|Plate), data=Subset_brood_a, REML = F)
+
+brood_model_2 <- lmer(Response ~ Position +
+                            (1|Plate), data=Subset_brood_a, REML = F)
+
+brood_model_3 <- lmer(Response ~ 1 +
+                            (1|Plate), data=Subset_brood_a, REML = F)
+
+# Comparing all models at once
+tab <- AICtab(brood_model_0, brood_model_1, brood_model_2, brood_model_3, base=TRUE , weights=TRUE)
+tab # model with no predictors is the best. Neither position nor length affect the number of eggs laid
+
+# Compare top models
+anova(brood_model_0, brood_model_3, refit= FALSE) # if significance difference, must keep the more complex model. not significant, keep the simpler
+
+# Model fit
+plot(simulateResiduals(fittedModel = brood_model_0, n = 1000))
+
+# Plot
+ggplot(Subset_brood, aes(x=Position, y=Sum_brood)) + 
+  geom_boxplot(fill="slateblue", alpha=0.2) + 
+  scale_fill_viridis(discrete = TRUE, alpha=0.4) +
+  geom_quasirandom(dodge.width = 0.9, varwidth = TRUE, alpha=0.4) +
+  labs(y= "Brood size (larvae)") +
+  theme_bw()
+
+```
+
+**3.A.1 Thrash**
+```{r, echo=FALSE}
+# Check data
+hist(Thrash_final_a$Count_thrash)
+shapiro.test(Thrash_final_a$Count_thrash) # sig different from normal distribution
+Thrash_final_a$Count_thrash_log <- log(Thrash_final_a$Count_thrash)
+hist(Thrash_final_a$Count_thrash_log) # worse, keep original and check model fit
+shapiro.test(Thrash_final_a$Count_thrash_log)
+Thrash_final_a$Plate <- as.factor(Thrash_final_a$Plate)
+levels(Thrash_final_a$Plate)
+
+# Scale variables (z-transformation)
+Thrash1a <- transform(Thrash_final_a,
+    Response=scale(Count_thrash),
+    Length_cs=scale(Length_thrash))
+sapply(Thrash1a, class) # must be numeric
+
+# Relevel
+Thrash1a$Position <- relevel(Thrash1a$Position, ref = "top")
+# Check data
+Thrash1a$Plate <- as.factor(Thrash1a$Plate)
+levels(Thrash1a$Plate)
+
+# Models
+thrash_model_0 <- lmer(Response ~ Position +
+                            Length_cs +
+                            (1|Plate), data=Thrash1a) 
+thrash_model_1 <- lmer(Response ~ Position +
+                            
+                            (1|Plate), data=Thrash1a)
+thrash_model_2 <- lmer(Response ~ 
+                            Length_cs +
+                            (1|Plate), data=Thrash1a)
+thrash_model_3 <- lmer(Response ~ 1 +
+                            (1|Plate), data=Thrash1a)
+
+# Comparing all models at once
+tab <- AICtab(thrash_model_0, thrash_model_1, thrash_model_2, thrash_model_3, base=TRUE , weights=TRUE)
+tab
+# Compare top models
+anova(thrash_model_1, thrash_model_3, refit= FALSE) 
+# Model fit
+plot(simulateResiduals(fittedModel = thrash_model_3, n = 1000))
+
+# Boxplot
+ggplot(Thrash_final_a, aes(x=Position, y=Count_thrash)) + 
+  geom_boxplot(fill="slateblue", alpha=0.2) + 
+  scale_fill_viridis(discrete = TRUE, alpha=0.4) +
+  geom_quasirandom(dodge.width = 0.9, varwidth = TRUE, alpha=0.4) +
+  labs(y= "Brood size (larvae)") +
+  theme_bw()
+
+
+```
