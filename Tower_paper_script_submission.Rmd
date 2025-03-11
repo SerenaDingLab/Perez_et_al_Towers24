@@ -1,0 +1,260 @@
+---
+title: "Tower_story_Report"
+output: html_document
+date: "2024-10-09"
+---
+
+```{r, echo=FALSE}
+# Packages
+# Data
+library(dplyr)
+# Plots
+library(ggplot2) # core plot package
+library(viridis) # fill
+library(ggbeeswarm) 
+library(hrbrthemes)
+library(plotly) # 3D plot
+library(ggridges)
+library(interactions) # plot categorical predictors
+# Models and stats
+library(lme4) # LMM
+library(bbmle) # comparing models
+library(DHARMa) # model fit
+library(performance) # model fit
+library(MASS)
+
+# Directory
+setwd("/Users/dperez/Desktop/Analyses_manuscript/Manuscript/Paper1_report/Submitted_code/Second_submission")
+Control2 <- read.csv("Control2.csv", header = TRUE, na.strings=c("","NA"))
+Subset_brood <- read.csv("Subset_brood.csv", header = TRUE, na.strings=c("","NA"))
+Thrash_final_a <- read.csv("Thrash_final_a.csv", header = TRUE, na.strings=c("","NA"))
+movementQDA <- read.csv("pca_results_reduced_features_for_QDA.csv", header=TRUE, na.strings=c("","NA"))
+CB_N2_towers <- read.csv("CB_N2_towers.csv", header=TRUE, na.strings=c("","NA"))
+```
+
+**Control**
+```{r, echo=FALSE}
+## Control experiment
+# Model
+# Does food presence affect towering?
+control_mod <- lm(Length ~ Treatment, data=Control2)
+summary(control_mod)
+
+# Plot
+ggplot(Control2, aes(x=Treatment, y=Length)) + 
+  geom_boxplot(fill="slateblue", alpha=0.2) + 
+  scale_fill_viridis(discrete = TRUE, alpha=0.4) +
+  geom_quasirandom(dodge.width = 0.9, varwidth = TRUE, alpha=0.4) +
+  labs(y= "Maximum tower length", x = "Treatment") +
+  theme_bw()
+```
+
+**Tower length** 
+```{r, echo=FALSE}
+CB_N2_towers <- CB_N2_towers[!is.na(CB_N2_towers$Pillar_length),]
+
+ggplot(CB_N2_towers, aes(x = Pillar_length, y = Strain, fill = Strain)) +
+    geom_density_ridges(alpha=0.6) +
+    scale_fill_viridis(discrete=TRUE) +
+    scale_color_viridis(discrete=TRUE) +
+    theme_ipsum() +
+    xlab("") +
+    ylab("Strain") +
+    labs(title = 'Pillar length strain') 
+
+ggplot(CB_N2_towers, aes(x = Pillar_length, y = Treatment, fill = Treatment)) +
+    geom_density_ridges(alpha=0.6) +
+    scale_fill_viridis(discrete=TRUE) +
+    scale_color_viridis(discrete=TRUE) +
+    theme_ipsum() +
+    xlab("") +
+    ylab("Strain") +
+    labs(title = 'Pillar length strain') 
+
+CB_N2_towers %>%
+  filter(between(Pillar_length, 2, 4)) -> CB_N2_towers 
+
+CB_N2_towers$Treatment <- factor(CB_N2_towers$Treatment)
+CB_N2_towers$Strain <- factor(CB_N2_towers$Strain)
+CB_N2_towers$Conc <- factor(CB_N2_towers$Conc)
+
+model_0 <- lmer(Mean_height ~ Strain + 
+                Treatment +
+                Pillar_length +
+                (1|Day),
+                data=CB_N2_towers, REML = FALSE)
+
+model_1 <- lmer(Mean_height ~ Strain + 
+                Treatment +
+                (1|Day),
+                data=CB_N2_towers, REML = FALSE)
+
+model_2 <- lmer(Mean_height ~
+                Treatment +
+                Pillar_length +
+                (1|Day),
+                data=CB_N2_towers, REML = FALSE)
+
+model_3 <- lmer(Mean_height ~
+                Strain +
+                Pillar_length +
+                (1|Day),
+                data=CB_N2_towers, REML = FALSE)
+
+tab <- AICtab(model_0, model_1, model_2, model_3, base=TRUE , weights=TRUE)
+tab
+
+# normality of model residuals
+hist(resid(model_0))
+check_model(model_0)
+
+# summary
+summary(model_0)
+report::report(model_0)
+
+# Treatment (age) effect
+c <- cat_plot(model_0, pred = Treatment, plot.points = FALSE, 
+         jitter=0.1,
+         point.alpha = 0.2,
+         errorbar.width=0.5,
+         colors="Dark2")
+# Include points to graph.
+c + geom_point(data=CB_N2_towers, aes(x = Treatment, y = Median_height, color = Strain), size = 4, alpha=0.5, position=position_jitterdodge(0.4)) + 
+  scale_fill_manual(values=c("#00798c", "#d1495b")) + # CB N2
+  scale_colour_manual(values=c("#00798c", "#d1495b")) +
+  labs(title = "Effect of age on tower height", colour = "Strain", x = "Life stage", y = "Average tower height (mm)") +
+  theme(legend.position='none') 
+
+
+# Strain effect
+c <- cat_plot(model_0, pred = Strain, plot.points = FALSE, 
+         jitter=0.1,
+         point.alpha = 0.2,
+         errorbar.width=0.5,
+         colors="Dark2")
+# Include points to graph.
+c + geom_point(data=CB_N2_towers, aes(x = Strain, y = Median_height, color = Strain), size = 4, alpha=0.5, position=position_jitterdodge(0.8)) + 
+  scale_fill_manual(values=c("#00798c", "#d1495b")) + # CB N2
+  scale_colour_manual(values=c("#00798c", "#d1495b")) +
+  labs(title = "Effect of strain on tower height", colour = "Strain", x = "Strain", y = "Average tower height (mm)") +
+  theme(legend.position='none') # erase the group legend
+
+```
+
+**Brood**
+```{r, echo=FALSE}
+# Models
+# Do worms from different tower positions have different brood sizes?
+# Scale variables (z-transformation)
+Subset_brood_a <- transform(Subset_brood,
+    Response=scale(Sum_brood),
+    Length_cs=scale(Length))
+sapply(Subset_brood_a, class)
+
+# Test for normality
+shapiro.test(Subset_brood_a$Response)
+hist(Subset_brood_a$Response)
+
+# Check data
+Subset_brood_a$Plate <- as.factor(Subset_brood_a$Plate)
+levels(Subset_brood_a$Plate)
+# Models
+brood_model_0 <- lmer(Response ~ Position +
+                            Length_cs + # did not add effect of pillar because towers were picked when they worms reached top of pillar >> Pillar=tower height
+                            (1|Plate), data=Subset_brood_a, REML = F) 
+
+brood_model_1 <- lmer(Response ~ 
+                            Length_cs +
+                            (1|Plate), data=Subset_brood_a, REML = F)
+
+brood_model_2 <- lmer(Response ~ Position +
+                            (1|Plate), data=Subset_brood_a, REML = F)
+
+brood_model_3 <- lmer(Response ~ 1 +
+                            (1|Plate), data=Subset_brood_a, REML = F)
+
+# Comparing all models at once
+tab <- AICtab(brood_model_0, brood_model_1, brood_model_2, brood_model_3, base=TRUE , weights=TRUE)
+tab # model with no predictors is the best. Neither position nor tower height (length) affect the number of eggs laid
+
+anova(brood_model_3, brood_model_2, refit= FALSE)
+
+# Model fit
+hist(resid(brood_model_3))
+plot(simulateResiduals(fittedModel = brood_model_3, n = 1000))
+
+# Plot
+ggplot(Subset_brood, aes(x=Position, y=Sum_brood, fill=Position)) + 
+  geom_boxplot(fill=c("#FF9999","#CC99FF","slateblue"), alpha=0.6) + 
+  scale_fill_viridis(discrete = TRUE, alpha=0.4) +
+  geom_quasirandom(dodge.width = 0.9, varwidth = TRUE, alpha=0.4) +
+  labs(y= "Brood size (larvae)") +
+  theme_bw()
+
+```
+
+**Thrash**
+```{r, echo=FALSE}
+# Models
+# Do worms from different tower positions have different body thrash counts?
+# Scale variables (z-transformation)
+Thrash1a <- transform(Thrash_final_a,
+    Response=scale(Count_thrash),
+    Length_cs=scale(Length_thrash))
+sapply(Thrash1a, class) # must be numeric
+
+# Check data
+Thrash1a$Position <- as.factor(Thrash1a$Position)
+Thrash1a$Plate <- as.factor(Thrash1a$Plate)
+
+# Relevel
+Thrash1a$Position <- relevel(Thrash1a$Position, ref = "top")
+
+# Models
+thrash_model_0 <- lmer(Response ~ Position +
+                            Length_cs +
+                            (1|Plate), data=Thrash1a) 
+thrash_model_1 <- lmer(Response ~ Position +
+                            
+                            (1|Plate), data=Thrash1a)
+thrash_model_2 <- lmer(Response ~ 
+                            Length_cs +
+                            (1|Plate), data=Thrash1a)
+thrash_model_3 <- lmer(Response ~ 1 +
+                            (1|Plate), data=Thrash1a)
+
+# Comparing all models at once
+tab <- AICtab(thrash_model_0, thrash_model_1, thrash_model_2, thrash_model_3, base=TRUE , weights=TRUE)
+tab
+# Model fit
+hist(resid(thrash_model_3))
+plot(simulateResiduals(fittedModel = thrash_model_3, n = 1000))
+
+anova(thrash_model_3, thrash_model_1, refit= FALSE)
+
+# Boxplot
+ggplot(Thrash_final_a, aes(x=Position, y=Count_thrash, fill=Position)) + 
+  geom_boxplot(fill=c("#FF9999","#CC99FF","slateblue"), alpha=0.6) + 
+  scale_fill_viridis(discrete = TRUE, alpha=0.4) +
+  geom_quasirandom(dodge.width = 0.9, varwidth = TRUE, alpha=0.4) +
+  labs(y= "Brood size (larvae)") +
+  theme_bw()
+
+```
+
+**Movement**
+```{r, echo=FALSE}
+# Do worms from different tower positions move differently on agar surface?
+movementQDA$Positions <- as.factor(movementQDA$Positions)
+movementQDA <- movementQDA[!(movementQDA$Plate %in% c("55")),] # remove outlier
+
+# 3D scatterplot
+fig <- plot_ly(movementQDA, x = ~pc1, y = ~pc2, z = ~pc3, color = ~Positions, colors = c("#CC99FF","slateblue","#FF9999"))
+fig <- fig %>% add_markers()
+fig <- fig %>% layout(scene = list(xaxis = list(title = 'PC1'),
+                     yaxis = list(title = 'PC2'),
+                     zaxis = list(title = 'PC3')))
+
+fig
+```
+
